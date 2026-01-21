@@ -7,14 +7,14 @@ from datetime import datetime
 
 # === 1. 页面设置 ===
 st.set_page_config(page_title="震宝单证系统", layout="wide")
-st.title("📄 震宝外贸单证自动生成系统 (最终版)")
+st.title("📄 震宝外贸单证自动生成系统")
 
-# === 2. 侧边栏：必须手动上传模板 ===
-# 既然 GitHub 读取有问题，我们就强制要求在网页上传，这样绝对不会错
+# === 2. 侧边栏：上传模板与基础信息 ===
 with st.sidebar:
     st.header("📂 第一步：上传模板")
+    # 强制要求手动上传，确保不会因为找不到文件报错
     uploaded_template = st.file_uploader(
-        "请把做好的 Word 模板拖到这里：", 
+        "请把 Word 模板拖到这里：", 
         type=['docx'],
         help="必须是包含 {{ }} 标签的 .docx 文件"
     )
@@ -25,9 +25,10 @@ with st.sidebar:
     date_input = st.date_input("签约日期 (Date)", datetime.today())
     buyer_name = st.text_input("买方名称 (Buyer)", "LLC OSIYO KOSMETIK")
 
-# === 3. 主界面：填写详细条款 ===
+# === 3. 主界面：商业条款 ===
 st.header("1️⃣ 商业条款")
 col1, col2 = st.columns(2)
+
 with col1:
     buyer_address = st.text_area("买方地址", "Republic of Tajikistan, Dushanbe...")
     payment_terms = st.selectbox("付款方式", [
@@ -35,16 +36,17 @@ with col1:
         "100% T/T in advance", 
         "L/C at sight"
     ])
+
 with col2:
     lead_time = st.text_input("交货期", "20 Working Days after deposit")
     shipping_method = st.text_input("运输方式", "By Truck (Land Transportation)")
 
-# === 4. 产品表格 ===
+# === 4. 产品明细表格 ===
 st.markdown("---")
 st.header("2️⃣ 产品明细")
-st.info("💡 请直接修改下方表格。注意：不要留空行！")
+st.info("💡 请直接修改下方表格。注意：不要留空行，确保数量和单价都有数字。")
 
-# 初始数据
+# 初始化数据
 if 'df' not in st.session_state:
     data = {
         "序号": [1, 2],
@@ -56,35 +58,21 @@ if 'df' not in st.session_state:
     }
     st.session_state.df = pd.DataFrame(data)
 
+# 显示可编辑表格
 edited_df = st.data_editor(st.session_state.df, num_rows="dynamic", use_container_width=True)
 
-# === 5. 生成按钮 ===
+# === 5. 生成按钮逻辑 ===
 st.markdown("---")
 if st.button("🚀 生成合同 (Generate)", type="primary"):
     
-    # 检查有没有传模板
+    # 1. 检查有没有上传模板
     if uploaded_template is None:
-        st.error("❌ 请先在左侧侧边栏上传 Word 模板！")
+        st.error("❌ 请先在左侧侧边栏上传 Word 模板文件！")
         st.stop()
 
-    # 准备数据
+    # 2. 准备数据
     items = []
     total_amount = 0
     
-    # 安全处理表格数据（防止空格报错）
-    safe_df = edited_df.fillna(0)
-    
-    for idx, row in safe_df.iterrows():
-        try:
-            qty = float(row.get('数量', 0))
-            price = float(row.get('单价', 0))
-            
-            # 跳过数量为 0 的空行
-            if qty == 0: continue
-            
-            total = qty * price
-            
-            items.append({
-                'no': row['序号'],
-                'desc_en': str(row['英文品名']),
-                '
+    # 防止空格报错：先把所有空值填为 0
+    safe
