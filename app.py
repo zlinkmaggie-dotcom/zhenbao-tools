@@ -2,146 +2,128 @@ import streamlit as st
 import pandas as pd
 from docxtpl import DocxTemplate
 import io
+import os
 from datetime import datetime
 
 # === 1. 页面基本设置 ===
 st.set_page_config(page_title="震宝单证系统", layout="wide")
 st.title("📄 震宝外贸单证自动生成系统")
-st.markdown("---")
 
-# === 2. 基础信息填写区 ===
-st.header("1️⃣ 订单基础信息 (Basic Info)")
+# === 🔍 侦探模式：帮您看服务器上到底有啥 ===
+# 这行字会显示在网页最上面，告诉我们文件在不在
+current_files = os.listdir('.')
+st.info(f"👀 服务器当前目录下的文件有：{current_files}")
 
-# 使用列布局，让界面更紧凑
+# === 2. 侧边栏：模板与基础信息 ===
+with st.sidebar:
+    st.header("📂 模板设置 (必选)")
+    
+    # 🌟 双保险功能：如果GitHub文件读不到，您可以手动传！
+    uploaded_template = st.file_uploader("如果不成功，请把Word模板拖到这里：", type=['docx'])
+    
+    st.markdown("---")
+    st.header("📝 订单信息")
+    buyer_name = st.text_input("买方名称 (Buyer)", "LLC OSIYO KOSMETIK")
+    contract_no = st.text_input("合同号 (No.)", "ZB2025-001")
+    date_input = st.date_input("日期 (Date)", datetime.today())
+
+# === 3. 主界面：条款与产品 ===
+st.header("1️⃣ 商业条款")
 col1, col2 = st.columns(2)
-
 with col1:
-    buyer_name = st.text_input("买方名称 (Buyer Name)", "LLC OSIYO KOSMETIK")
-    contract_no = st.text_input("合同号 (Contract No)", "ZB2025-001")
-    date_input = st.date_input("签约日期 (Date)", datetime.today())
-
+    payment_terms = st.selectbox("付款方式", ["30% Deposit, 70% Balance", "100% T/T", "L/C at sight"])
 with col2:
-    buyer_address = st.text_area("买方地址 (Address)", height=100, help="填入客户的详细地址")
-    shipping_method = st.text_input("运输方式 (Shipping)", "By Truck (Land Transportation)")
+    lead_time = st.text_input("交货期", "20 Working Days")
+    shipping_method = st.text_input("运输方式", "By Truck")
+    buyer_address = st.text_area("买方地址", "Republic of Tajikistan...")
 
-# === 3. 商业条款填写区 ===
 st.markdown("---")
-st.header("2️⃣ 商业条款 (Terms)")
-
-col3, col4 = st.columns(2)
-with col3:
-    payment_terms = st.selectbox(
-        "付款方式 (Payment Terms)", 
-        [
-            "30% Deposit, 70% Balance before shipment", 
-            "100% T/T in advance", 
-            "L/C at sight",
-            "50% Deposit, 50% Balance against B/L copy"
-        ]
-    )
-
-with col4:
-    lead_time = st.text_input("交货期 (Lead Time)", "20 Working Days after deposit")
-
-# === 4. 产品明细填写区 ===
-st.markdown("---")
-st.header("3️⃣ 产品明细 (Products)")
-st.info("💡 操作提示：直接在表格里修改内容。点击表格下方的 '+' 号可以添加新产品。")
-
-# 初始化表格数据
+st.header("2️⃣ 产品列表")
+# 初始化表格
 if 'df' not in st.session_state:
     data = {
         "序号": [1, 2],
-        "英文品名 (Desc En)": ["Folding Machine", "Water Tank"],
-        "中文品名 (Desc Cn)": ["折叠机", "水箱"],
-        "数量 (Qty)": [1, 1],
-        "单位 (Unit)": ["Set", "Pcs"],
-        "单价 (Price USD)": [34200.00, 5000.00]
+        "英文品名": ["Folding Machine", "Water Tank"],
+        "中文品名": ["折叠机", "水箱"],
+        "数量": [1, 1],
+        "单位": ["Set", "Pcs"],
+        "单价": [34200.00, 5000.00]
     }
     st.session_state.df = pd.DataFrame(data)
 
-# 显示可编辑表格
-edited_df = st.data_editor(
-    st.session_state.df,
-    num_rows="dynamic", # 允许添加/删除行
-    use_container_width=True,
-    column_config={
-        "单价 (Price USD)": st.column_config.NumberColumn(format="$%.2f", step=0.01),
-        "数量 (Qty)": st.column_config.NumberColumn(step=1),
-        "序号": st.column_config.NumberColumn(step=1)
-    }
-)
+edited_df = st.data_editor(st.session_state.df, num_rows="dynamic", use_container_width=True)
 
-# === 5. 生成按钮与核心逻辑 ===
+# === 4. 生成按钮 ===
 st.markdown("---")
-if st.button("🚀 生成合同文件 (Generate Contract)", type="primary", use_container_width=True):
+if st.button("🚀 立即生成合同", type="primary"):
     
-    # --- A. 整理数据 ---
+    # 🅰️ 确定用哪个模板
+    tpl_object = None
+    
+    # 优先用您刚才拖进来的文件
+    if uploaded_template is not None:
+        tpl_object = DocxTemplate(uploaded_template)
+    # 如果没拖，就去GitHub里找
+    elif "template_contract.docx" in current_files:
+        try:
+            tpl_object = DocxTemplate("template_contract.docx")
+        except Exception as e:
+            st.error(f"GitHub里的模板文件损坏，请检查是否是直接改了后缀名？错误：{e}")
+            st.stop()
+    else:
+        st.error("❌ 找不到模板！请在左侧侧边栏手动上传 template_contract.docx")
+        st.stop()
+
+    # 🅱️ 整理数据
     items = []
     total_amount = 0
+    safe_df = edited_df.fillna(0) # 防止空格报错
     
-    # 遍历表格每一行
-    for idx, row in edited_df.iterrows():
-        # 强制转换为数字，防止出错
+    for idx, row in safe_df.iterrows():
         try:
-            qty = float(row['数量 (Qty)'])
-            price = float(row['单价 (Price USD)'])
-        except ValueError:
-            st.error(f"❌ 第 {idx+1} 行的数量或价格格式不对，请检查！")
-            st.stop()
+            qty = float(row.get('数量', 0))
+            price = float(row.get('单价', 0))
+            if qty == 0: continue # 跳过空行
             
-        total = qty * price
-        
-        # 将这一行的数据加入列表
-        items.append({
-            'no': row['序号'],
-            'desc_en': row['英文品名 (Desc En)'],
-            'desc_cn': row['中文品名 (Desc Cn)'],
-            'qty': qty,
-            'unit': row['单位 (Unit)'],
-            'price': f"{price:,.2f}", # 格式化：34,200.00
-            'total': f"{total:,.2f}"
-        })
-        total_amount += total
+            total = qty * price
+            items.append({
+                'no': row['序号'],
+                'desc_en': str(row['英文品名']),
+                'desc_cn': str(row['中文品名']),
+                'qty': qty,
+                'unit': str(row['单位']),
+                'price': f"{price:,.2f}",
+                'total': f"{total:,.2f}"
+            })
+            total_amount += total
+        except:
+            continue
 
-    # --- B. 准备填入 Word 的数据包 ---
     context = {
         'buyer_name': buyer_name,
         'buyer_address': buyer_address,
         'contract_no': contract_no,
         'date': date_input.strftime("%Y-%m-%d"),
-        'shipping_method': shipping_method,
         'payment_terms': payment_terms,
         'lead_time': lead_time,
-        'total_amount': f"{total_amount:,.2f}", # 总金额
-        'items': items # 这里对应 Word 表格里的循环
+        'shipping_method': shipping_method,
+        'total_amount': f"{total_amount:,.2f}",
+        'items': items
     }
-    
-    # --- C. 读取模板并生成 ---
+
+    # ©️ 渲染并下载
     try:
-        # 加载模板 (注意文件名必须对！)
-        doc = DocxTemplate("template_contract.docx")
-        
-        # 填入数据
-        doc.render(context)
-        
-        # 保存到内存
+        tpl_object.render(context)
         bio = io.BytesIO()
-        doc.save(bio)
+        tpl_object.save(bio)
         bio.seek(0)
         
-        # 成功提示
-        st.success(f"✅ 生成成功！订单总金额: ${total_amount:,.2f}")
-        st.balloons()
-        
-        # 提供下载按钮
+        st.success("✅ 生成成功！")
         st.download_button(
-            label="📥 点击下载合同 (.docx)",
+            label="📥 下载合同 (.docx)",
             data=bio,
             file_name=f"Contract_{contract_no}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
-        
     except Exception as e:
-        st.error("❌ 生成失败！")
-        st.warning(f"请检查 GitHub 上是否上传了 'template_contract.docx' 文件。\n错误详情: {e}")
+        st.error(f"生成时出错：{e}")
